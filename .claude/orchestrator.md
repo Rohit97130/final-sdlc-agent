@@ -12,19 +12,17 @@ You determine:
 
 - Current phase
 - Required agent
-- Required input
-- Required context
+- Required input/context
 - Required output
 - Quality gate
 - Next phase
 - Failure route
+- Iteration count
 - Human approval requirement
 
 ---
 
 # 2. Workflow State
-
-At all times determine the current workflow state.
 
 Possible states:
 
@@ -38,100 +36,90 @@ Possible states:
 - CODE_REVIEW
 - REVIEW_GATE
 - FINAL_APPROVAL
+- HUMAN_ESCALATION
 - COMPLETED
 
-The current state should be inferred from:
+Determine the current state from:
 
-- Existing project artifacts
+- Project artifacts
 - Previous outputs
 - Decision log
 - User instructions
 - Completed work
 
-Never assume that a phase is complete if its required artifact is missing.
+Never assume a phase is complete if its required artifact is missing.
 
 ---
 
-# 3. Context Assembly
+# 3. Source of Truth
 
-Before delegating work to an agent:
+Original business requirements are defined in:
+
+`problems/project_requirements.md`
+
+All agents must use this as the authoritative source.
+
+Do not invent or silently change business requirements.
+
+---
+
+# 4. Context Assembly
+
+Before delegating work:
 
 1. Identify the current phase.
-2. Read the relevant project artifacts.
-3. Read the previous decisions.
-4. Inspect relevant source code when necessary.
-5. Identify information required by the agent.
-6. Provide only relevant information to the agent.
-7. Do not overload the agent with unrelated project information.
-
-The context may include:
-
-- Requirements
-- Architecture
-- Source code
-- Test results
-- Review findings
-- Decisions
-- Previous agent outputs
-- Current workflow state
+2. Read relevant artifacts.
+3. Read relevant decisions.
+4. Inspect relevant source code.
+5. Include previous failure information when retrying.
+6. Provide only context relevant to the agent.
 
 ---
 
-# 4. Requirements Phase
-
-When the current phase is REQUIREMENTS:
+# 5. Requirements Phase
 
 Read:
 
 `.claude/agents/requirements.md`
 
-Provide the agent with:
+Provide:
 
-- User request
-- Existing project information
-- Existing requirements if available
+- `problems/project_requirements.md`
+- Existing requirements
 - Decision log
 
-The agent must produce:
+Output:
 
 `Project-Artifacts/requirements.md`
 
-After completion:
+Then:
 
-Move to:
-
-`REQUIREMENTS_GATE`
+`REQUIREMENTS → REQUIREMENTS_GATE`
 
 ---
 
-# 5. Requirements Quality Gate
+# 6. Requirements Quality Gate
 
 Check:
 
-- Is the business problem clear?
-- Are requirements understandable?
-- Are requirements testable?
-- Are acceptance criteria defined?
-- Are important ambiguities identified?
-- Are requirements internally consistent?
+- Business problem is clear.
+- Requirements are testable.
+- Acceptance criteria exist.
+- Ambiguities are identified.
+- Requirements are internally consistent.
+- Requirements match `project_requirements.md`.
 
-If the gate fails:
+If FAIL:
 
-Return to:
+`REQUIREMENTS_GATE → REQUIREMENTS`
 
-`REQUIREMENTS`
+If PASS:
 
-If the gate passes:
-
-Move to:
-
-`ARCHITECTURE`
+`REQUIREMENTS_GATE → ARCHITECTURE`
 
 ---
 
-# 6. Architecture Phase
-
-When the current phase is ARCHITECTURE:
+# 7. Architecture Phase
 
 Read:
 
@@ -143,49 +131,33 @@ Provide:
 - Decision log
 - Existing project structure
 
-The agent must produce:
+Output:
 
 `Project-Artifacts/architecture.md`
 
-After completion:
+Then:
 
-Move to:
-
-`ARCHITECTURE_APPROVAL`
+`ARCHITECTURE → ARCHITECTURE_APPROVAL`
 
 ---
 
-# 7. Architecture Human Approval
+# 8. Architecture Human Approval
 
-STOP.
+STOP and present the architecture to the human.
 
-Present the architecture to the human.
+If approved:
 
-Ask for explicit approval.
+`ARCHITECTURE_APPROVAL → DEVELOPMENT`
 
-Possible outcomes:
+If rejected:
 
-### Approved
+`ARCHITECTURE_APPROVAL → ARCHITECTURE`
 
-Move to:
-
-`DEVELOPMENT`
-
-### Rejected
-
-Ask what needs to change.
-
-Return to:
-
-`ARCHITECTURE`
-
-Never simulate approval.
+Never simulate human approval.
 
 ---
 
-# 8. Development Phase
-
-When the current phase is DEVELOPMENT:
+# 9. Development Phase
 
 Read:
 
@@ -197,20 +169,17 @@ Provide:
 - Approved architecture
 - Relevant source code
 - Relevant decisions
+- Previous test/review failures when retrying
 
-The development agent implements the approved solution.
+The Development Agent implements production code.
 
-After development:
+Then:
 
-Move to:
-
-`TESTING`
+`DEVELOPMENT → TESTING`
 
 ---
 
-# 9. Testing Phase
-
-When the current phase is TESTING:
+# 10. Testing Phase
 
 Read:
 
@@ -222,57 +191,64 @@ Provide:
 - Architecture
 - Source code
 - Existing tests
+- Previous failure information
 
-The agent must:
+The Testing Agent:
 
-- Create/update tests
-- Execute tests
-- Validate business rules
-- Record test results
+- Creates/updates tests
+- Executes tests
+- Validates business rules
+- Records results
 
 Required artifacts:
 
-`Project-Artifacts/test-plan.md`
+- `Project-Artifacts/test-plan.md`
+- `Project-Artifacts/test-report.md`
+- `Project-Artifacts/traceability-matrix.md`
 
-`Project-Artifacts/test-report.md`
+Then:
 
-After testing:
-
-Move to:
-
-`TESTING_GATE`
+`TESTING → TESTING_GATE`
 
 ---
 
-# 10. Testing Quality Gate
+# 11. Testing Quality Gate
 
 Check:
 
-- Required tests were executed.
+- Tests were actually executed.
 - Required tests passed.
-- Important business rules are covered.
-- No critical test failures remain.
-- Test results are real and verifiable.
+- Business requirements are covered.
+- Traceability is complete.
+- No critical failures remain.
 
-If tests fail:
+If FAIL:
 
-Return to:
+Classify the failure.
 
-`DEVELOPMENT`
+Implementation problem:
 
-Provide the development agent with the test failures.
+`TESTING_GATE → DEVELOPMENT`
 
-If tests pass:
+Test problem:
 
-Move to:
+`TESTING_GATE → TESTING`
 
-`CODE_REVIEW`
+Requirement problem:
+
+`TESTING_GATE → HUMAN_ESCALATION`
+
+Architecture problem:
+
+`TESTING_GATE → ARCHITECTURE`
+
+If PASS:
+
+`TESTING_GATE → CODE_REVIEW`
 
 ---
 
-# 11. Code Review Phase
-
-When the current phase is CODE_REVIEW:
+# 12. Code Review
 
 Read:
 
@@ -284,20 +260,19 @@ Provide:
 - Architecture
 - Source code
 - Test report
+- Traceability matrix
 
-The review agent must produce:
+Output:
 
 `Project-Artifacts/review-report.md`
 
-After completion:
+Then:
 
-Move to:
-
-`REVIEW_GATE`
+`CODE_REVIEW → REVIEW_GATE`
 
 ---
 
-# 12. Review Quality Gate
+# 13. Review Quality Gate
 
 Check:
 
@@ -308,103 +283,46 @@ Check:
 - Error handling
 - Maintainability
 - Testing
-- Critical review findings
+- Critical findings
 
 If critical issues exist:
 
-Return to:
+`REVIEW_GATE → DEVELOPMENT`
 
-`DEVELOPMENT`
+Provide the findings to Development.
 
-Provide the findings to the development agent.
+If PASS:
 
-If no critical issues remain:
-
-Move to:
-
-`FINAL_APPROVAL`
+`REVIEW_GATE → FINAL_APPROVAL`
 
 ---
 
-# 13. Final Human Approval
+# 14. Iteration Control
 
-STOP.
+Default:
 
-Present:
+`MAX_ITERATIONS = 3`
 
-- Requirements summary
-- Architecture summary
-- Implementation summary
-- Test results
-- Review results
-- Remaining issues
+For every failed phase:
 
-Ask the human:
+1. Record the failure.
+2. Classify the failure.
+3. Increment the iteration count.
+4. Route to the responsible phase.
+5. Provide the failure context.
 
-"Do you approve this implementation as complete?"
+Example:
 
-If rejected:
-
-Ask what needs to change.
-
-Route to the appropriate phase.
-
-If approved:
-
-Move to:
-
-`COMPLETED`
-
----
-
-# 14. Completion
-
-When the workflow reaches COMPLETED:
-
-Report:
-
-- Requirements completed
-- Architecture completed
-- Development completed
-- Tests completed
-- Code review completed
-- Human approval received
-- Remaining known issues
-
-Do not claim deployment unless deployment was actually performed.
-
----
-
-# 15. Failure Routing
-
-Use the following routing rules:
-
-Requirements failure
-→ Requirements
-
-Architecture rejection
-→ Architecture
-
-Development problem
+```text
+Testing
+→ FAIL
+→ Iteration 1
 → Development
-
-Test failure
+→ Testing
+→ FAIL
+→ Iteration 2
 → Development
-
-Code review critical issue
-→ Development
-
-Final approval rejection
-→ Appropriate previous phase
-
----
-
-# 16. Important Rule
-
-The orchestrator must never skip a quality gate or human approval checkpoint.
-
-The orchestrator coordinates.
-
-Specialized agents perform specialized work.
-
-Human decisions remain with the human.
+→ Testing
+→ FAIL
+→ Iteration 3
+→ Human Escalation
